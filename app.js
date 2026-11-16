@@ -12,7 +12,7 @@ import {
 } from "./animation.js";
 
 // Version of the site (semver). Changed only by scripts/bump-version.sh, never by hand.
-const UI_VERSION = "0.2.0";
+const UI_VERSION = "0.2.1";
 
 // Base map: OpenFreeMap, no key and no cookies, all styles on the same host (one CSP entry). Positron is light grey;
 // liberty and bright are the coloured OSM look; dark and fiord (blue) are darker, served but not on the quick start
@@ -540,10 +540,47 @@ function makeElement(tag, className, text) {
   return node;
 }
 
-// A link that opens in a new tab, with no access back to this page (noopener) and no referrer.
+// Hosts a link built from data may open. Read on the data 2026-11-16: the API gives Wikipedia revisions and Wikidata
+// pages, portraits.json (Commons) gives file pages and licences on creativecommons.org and flickr.com; the credits of
+// the map add their own sites. A host not listed gives plain text, never a link.
+const ALLOWED_LINK_HOSTS = new Set([
+  "en.wikipedia.org", "www.wikidata.org", "commons.wikimedia.org", "creativecommons.org", "www.flickr.com",
+  "maplibre.org", "openfreemap.org", "openmaptiles.org", "www.openstreetmap.org",
+]);
+// The scheme of every link we write. http on an allowed host is upgraded to it (some Commons licence URLs are http).
+const SECURE_SCHEME = "https:";
+const UPGRADED_SCHEME = "http:";
+
+// The URL to put in href, or null: only http(s) on an allowed host, always written as https. Defence in depth: the CSP
+// (script-src 'self', no 'unsafe-inline') already blocks javascript: URLs; this keeps a bad value from the data out of
+// the page even if the CSP changes one day.
+function safeLinkUrl(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== SECURE_SCHEME && parsed.protocol !== UPGRADED_SCHEME) {
+    return null;
+  }
+  if (!ALLOWED_LINK_HOSTS.has(parsed.hostname)) {
+    return null;
+  }
+  parsed.protocol = SECURE_SCHEME;
+  return parsed.href;
+}
+
+// A link that opens in a new tab, with no access back to this page (noopener) and no referrer. A URL refused by
+// safeLinkUrl gives the text alone, and a warning in the console.
 function makeLink(className, text, url) {
+  const safe = safeLinkUrl(url);
+  if (safe === null) {
+    console.warn("Link refused:", url);
+    return makeElement("span", className, text);
+  }
   const link = makeElement("a", className, text);
-  link.href = url;
+  link.href = safe;
   link.target = "_blank";
   link.rel = "noopener noreferrer";
   return link;
@@ -553,14 +590,19 @@ function makeLink(className, text, url) {
 // to the item (no title needed, no API change).
 const WIKIPEDIA_BY_QID = "https://www.wikidata.org/wiki/Special:GoToLinkedPage/enwiki/";
 
+// null for a value that is not a QID: the QID of a side comes from the scene, not from the address.
 function wikipediaUrl(qid) {
-  return WIKIPEDIA_BY_QID + qid;
+  return QID_PATTERN.test(qid) ? WIKIPEDIA_BY_QID + qid : null;
 }
 
 // The name of a person as a link to their article that asks first (askToOpen), like the face of the person of the
 // scene. Still a real link: the address shows under the mouse, and a middle click opens it with no question.
+// A refused URL gives the name alone, with no click.
 function articleLink(className, name, qid) {
   const link = makeLink(className, name, wikipediaUrl(qid));
+  if (!(link instanceof HTMLAnchorElement)) {
+    return link;
+  }
   link.addEventListener("click", (event) => {
     event.preventDefault();
     askToOpen(`the Wikipedia article of ${name}`, link.href);
@@ -2116,6 +2158,11 @@ function showLoadError(what, blocked) {
 // with the browser's confirm(): that dialog blocks the page and the animation. The clock pauses while asking and plays
 // again after the answer if it was playing.
 function askToOpen(what, url) {
+  const safe = safeLinkUrl(url);
+  if (safe === null) {
+    console.warn("Link refused:", url);
+    return;
+  }
   const notice = document.getElementById("notice");
   const wasPlaying = clockIsPlaying !== null && clockIsPlaying();
   if (playClock !== null) {
@@ -2124,7 +2171,7 @@ function askToOpen(what, url) {
   const answer = (open) => {
     notice.hidden = true;
     if (open) {
-      window.open(url, "_blank", "noopener,noreferrer");
+      window.open(safe, "_blank", "noopener,noreferrer");
     }
     if (wasPlaying) {
       playClock(true);
