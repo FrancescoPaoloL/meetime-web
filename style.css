@@ -1,0 +1,998 @@
+/* The map fills the whole window. */
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+#map {
+  position: absolute;
+  inset: 0;
+}
+
+/* The face of a person on the map (a MapLibre Marker). Sizes from spec.md, "Portraits": about 36 px on the map.
+   The Marker moves this element with a CSS transform, so the zoom of the crop sits on the image inside, never here. */
+.face {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--ring); /* --ring: the colour of the person, set by app.js */
+  border-radius: 50%;
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); /* lifts the face off the map */
+  box-sizing: border-box;
+}
+
+/* Crop chosen on Verdi with docs/tool/portrait_preview.html (2026-11-13): zoom 1.2, centre 50% across, 20% from the
+   top (faces sit high in a portrait). */
+.face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 20%;
+  transform: scale(1.2);
+  transform-origin: 50% 20%;
+  display: block;
+}
+
+/* No portrait: the initials, white on the colour of the person. */
+.face-initials {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font: bold 13px sans-serif;
+}
+
+/* A person on the map (a MapLibre Marker): a wrapper (.figure) holding the face and the name. The Marker owns the
+   transform and the opacity of the wrapper, so fades and pulses are on the children. NO position rule on .figure:
+   maplibre-gl.css makes every marker `position: absolute` (which also anchors the name below), and a `position:
+   relative` here would win over it and put the markers back in the page flow, far from their point. The wrapper has
+   the size of the face, so the face, not the name, sits on the point. */
+
+/* The name under the face, outside the box of the wrapper (absolute). A label in the colour of the person, white text:
+   the map labels are dark text with no background, so a person never reads as a city. */
+.figure-name {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 3px;
+  max-width: 110px; /* long names wrap on two lines, about three faces wide */
+  width: max-content;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--ring);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  text-align: center;
+  font: 11px sans-serif;
+  line-height: 1.2;
+  color: #ffffff;
+  pointer-events: none;
+}
+
+/* Under the name of a person met: a light strip at the foot of the label, apart from the name. The level in small bold
+   capitals in the colour of the level, then, on its own line, the year of the meeting in dark grey. The negative
+   margins take the strip to the edges of the label (its padding is 1px 5px). */
+.figure-meta {
+  display: block;
+  margin: 2px -5px -1px;
+  padding: 1px 5px;
+  border-radius: 0 0 3px 3px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #555555;
+  font-size: 10px;
+}
+
+.figure-level,
+.figure-date {
+  display: block; /* one line each: level, then year */
+}
+
+.figure-level {
+  color: var(--ring);
+  font-weight: bold;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.figure-date {
+  color: #333333;
+}
+
+/* The person of the scene: name in bold. */
+.figure-main .figure-name {
+  font-weight: bold;
+}
+
+/* The face of the person of the scene opens their Wikipedia article (app.js). */
+.figure-main {
+  cursor: pointer;
+}
+
+/* A person met: hidden until the meeting is on screen, then fades in with a pulse. */
+.figure-met .face,
+.figure-met .figure-name,
+.figure-met .figure-leader {
+  opacity: 0;
+  transition: opacity 0.4s ease; /* fade in and out, in step with a trip of about a second */
+}
+
+.figure-met.figure-shown .face,
+.figure-met.figure-shown .figure-name,
+.figure-met.figure-shown .figure-leader {
+  opacity: 1;
+}
+
+/* The leader line of a person met: its own Marker on the place of the meeting (app.js, meetingMarkers), added before
+   the faces so it lies under all of them and their labels; it shows only between the labels and the place. A
+   zero-size anchor on the point; the line starts there and turns around its left end (length and angle set by
+   app.js, pointLeader). The line style of the ring: solid documented, dashed plausible, dotted possible. 2 px: the
+   ring is 3 px, the line must not read as a track. */
+.leader-anchor {
+  width: 0;
+  height: 0;
+}
+
+.figure-leader {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 0;
+  margin-top: -1px; /* half the line: centred on the point */
+  border-top: 2px solid var(--ring);
+  transform-origin: 0 50%;
+  pointer-events: none;
+}
+
+.figure-plausible .figure-leader {
+  border-top-style: dashed;
+}
+
+.figure-possible .figure-leader {
+  border-top-style: dotted;
+}
+
+/* A hidden face must not catch clicks; a face on screen opens the card of the meeting. */
+.figure-met {
+  pointer-events: none;
+}
+
+.figure-met.figure-shown {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.figure-met.figure-shown .face {
+  animation: meeting-pulse 1.2s ease-out 2; /* two waves when the meeting starts */
+}
+
+/* Plausible: dashed ring; documented keeps the solid one (spec.md, "UI", Animation); possible, when loaded, dotted. */
+.figure-plausible .face {
+  border-style: dashed;
+}
+
+.figure-possible .face {
+  border-style: dotted;
+}
+
+/* The pulse: a ring of the meeting colour growing out of the face and fading. 16 px: about half a face. */
+@keyframes meeting-pulse {
+  from {
+    box-shadow: 0 0 0 0 var(--ring);
+  }
+  to {
+    box-shadow: 0 0 0 16px transparent;
+  }
+}
+
+/* The time bar: a small panel at the bottom centre, over the map. Dark like the title, the search and the card
+   (2026-11-15: the light bar was the only light panel). */
+#timebar {
+  position: absolute;
+  bottom: 24px; /* above the attribution of the map */
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(760px, 90%); /* a longer track: more room between the ticks of the meetings */
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(30, 32, 36, 0.96);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  font: 14px sans-serif;
+  color: #e8e6e3;
+  color-scheme: dark; /* dark checkbox and dark list of the level selector */
+  text-align: center;
+}
+
+/* Three columns: the buttons on the left, the date in the middle of the WHOLE bar, and the levels on the right (1fr
+   each side), so neither side pushes the date off centre. */
+.timebar-top {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.timebar-top button {
+  width: 34px;
+  height: 28px;
+  border: 1px solid #44474d;
+  border-radius: 4px;
+  background: #2b2e33; /* the buttons of the notice */
+  font-size: 14px;
+  color: #e8e6e3;
+  cursor: pointer;
+}
+
+.timebar-top button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* The box "Journeys", after the buttons. */
+.journeys {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  font: 13px sans-serif;
+  color: #e8e6e3;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* The levels of the encounters: in the right column of the bar, against its right edge, as tall as the buttons. */
+.levels {
+  display: flex;
+  justify-content: flex-end;
+}
+
+#level {
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid #44474d;
+  border-radius: 4px;
+  background: #2b2e33;
+  font: 13px sans-serif;
+  color: #e8e6e3;
+  cursor: pointer;
+}
+
+#level:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* The date large, in a book face (the people are of 1600-1900); the city under it, small capitals in the colour of
+   the person. */
+#clock-label {
+  text-align: center;
+}
+
+#clock-date {
+  font: 22px Georgia, "DejaVu Serif", serif;
+  font-variant-numeric: tabular-nums; /* the year does not jitter while it runs */
+  color: #ffffff;
+}
+
+#clock-place {
+  min-height: 1.2em; /* the bar keeps its height while loading, when there is no city yet */
+  font: 13px sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #e8796e; /* the light red of the card: the dark red of the track is too dim on the dark panel */
+}
+
+/* The track: taller than the bar, so it is easy to grab; the bar, the ticks and the thumb are drawn inside it. */
+#track {
+  position: relative;
+  height: 18px;
+  cursor: pointer;
+  touch-action: none; /* a drag on a touch screen moves the clock, not the page */
+}
+
+.bar {
+  position: absolute;
+  top: 6px; /* centred in the 18 px track */
+  left: 0;
+  right: 0;
+  height: 6px;
+  border-radius: 3px;
+  background: #44474d; /* the borders of the dark panels */
+  overflow: hidden;
+}
+
+/* The share of the life already run: scaled from the left by app.js (0 to 1). */
+#clock-fill {
+  height: 100%;
+  background: #c0392b; /* the colour of the track (TRACK_COLOR in app.js) */
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+/* A meeting: a thin mark across the track, in the colour of its level (--ring, set by app.js). */
+.tick {
+  position: absolute;
+  top: 1px;
+  width: 3px;
+  height: 16px;
+  margin-left: -1px; /* centred on its moment */
+  border-radius: 1px;
+  background: var(--ring);
+}
+
+/* The handle at the clock: a round knob in the colour of the person. */
+#thumb {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px; /* centred on the clock */
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background: #c0392b;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+/* The legend of the levels, under the track: a small ring per level, the line style of the faces. */
+#legend {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 6px;
+  font: 12px sans-serif;
+  color: #e8e6e3;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* 12 px: a face (36 px) at a third, the ring 2 px so dashes and dots still read. */
+.legend-ring {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--ring);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.legend-ring-plausible {
+  border-style: dashed;
+}
+
+.legend-ring-possible {
+  border-style: dotted;
+}
+
+/* A level not shown with the current choice (or not loaded): dimmed, still there to explain the colours. */
+.legend-off {
+  opacity: 0.35;
+}
+
+/* While loading there is no clock yet: no thumb. */
+#timebar.loading #thumb {
+  display: none;
+}
+
+/* While the scene loads: grey stripes run along the bar, so the page shows it is working. */
+#timebar.loading .bar {
+  background: repeating-linear-gradient(45deg, #44474d 0 8px, #5a5e66 8px 16px);
+  background-size: 200% 100%;
+  animation: loading-stripes 1s linear infinite;
+}
+
+@keyframes loading-stripes {
+  to {
+    background-position: -45px 0; /* a whole number of stripes, so the loop has no jump */
+  }
+}
+
+/* The name of a stop of the track (the timeless map has no city names of its own): book face like the date, dark text
+   with a white halo, no background, so it stays apart from the labels of the people. The Marker element is a zero-size
+   anchor on the point; the text sits to its RIGHT, past the face of a person standing there (36 px wide: 18 px of
+   radius plus a gap), vertically centred on the point. Below the point it hid under the face and the name. */
+.stop-label {
+  width: 0;
+  height: 0;
+}
+
+.stop-label-text {
+  position: absolute;
+  left: 24px;
+  top: -8px; /* half the line: centred on the point */
+  font: 12px Georgia, "DejaVu Serif", serif;
+  color: #333333;
+  white-space: nowrap;
+  text-shadow: 0 0 2px #ffffff, 0 0 2px #ffffff, 0 0 3px #ffffff;
+  cursor: default; /* the tooltip of a shared label ("Milan +5") lists the names */
+}
+
+/* The card of an encounter: a dark panel on the right, over the map, scrolling if the sources are many. Dark: it reads
+   as a window apart from the light map, and the long quotations tire the eyes less. */
+#card {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: min(360px, 90%);
+  max-height: calc(100% - 180px); /* stays above the time bar */
+  overflow-y: auto;
+  padding: 14px 16px;
+  border-radius: 6px;
+  background: rgba(30, 32, 36, 0.96);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  font: 14px sans-serif;
+  color: #e8e6e3;
+  color-scheme: dark; /* dark scroll bar too */
+}
+
+#card[hidden] {
+  display: none;
+}
+
+#card-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  border: none;
+  background: none;
+  color: #e8e6e3;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.card-title {
+  margin: 0 24px 4px 0; /* room for the close button */
+  font: 20px Georgia, "DejaVu Serif", serif;
+  color: #ffffff;
+}
+
+/* The red of the track, lighter: the dark red is too dim on the dark panel. */
+.card-where {
+  margin-bottom: 12px;
+  color: #e8796e;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.card-side {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #44474d;
+}
+
+.card-person {
+  margin: 0;
+  font-size: 15px;
+  color: #ffffff;
+}
+
+/* The name links to the person's Wikipedia article: white like the heading, underlined only under the mouse. */
+.card-person-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.card-person-link:hover {
+  text-decoration: underline;
+}
+
+.card-years {
+  margin-bottom: 6px;
+  color: #9a9da3;
+  font-size: 12px;
+}
+
+/* The credit of the portrait, under the name: small and grey, it must not compete with the sources. */
+.card-credit {
+  margin-bottom: 6px;
+  color: #9a9da3;
+  font-size: 11px;
+}
+
+/* The licences of the texts and data, once at the foot of the card, apart from the last side. */
+.card-attribution {
+  margin: 14px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid #44474d;
+  color: #9a9da3;
+  font-size: 11px;
+}
+
+/* Links in those two lines keep the small size of the line (.card-link alone is 12 px). */
+.card-credit .card-link,
+.card-attribution .card-link {
+  font-size: inherit;
+}
+
+.card-source {
+  margin-bottom: 8px;
+}
+
+/* The sentence of Wikipedia, as a quotation in a book face. */
+.card-sentence {
+  margin: 0 0 2px;
+  padding-left: 10px;
+  border-left: 3px solid #5a5e66;
+  font: italic 14px Georgia, "DejaVu Serif", serif;
+  color: #d8d5d0;
+}
+
+.card-fact {
+  font-size: 13px;
+}
+
+/* The blue of the meetings, lighter for the dark panel. */
+.card-link {
+  font-size: 12px;
+  color: #8ab4e8;
+}
+
+.card-loading {
+  color: #9a9da3;
+}
+
+/* The title of the site: a small dark panel at the top left, over the map (the card of an encounter sits on the
+   right). Same dark look as the card. A wordmark in the book face of the date: "Mee" white, "Time" in italic, in the
+   light red of the card (the red of the track); under it what the site shows, small and grey. */
+#title {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  padding: 10px 16px 9px;
+  border-radius: 6px;
+  background: rgba(30, 32, 36, 0.96);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.title-name {
+  margin: 0;
+  font: 26px Georgia, "DejaVu Serif", serif;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  color: #ffffff;
+}
+
+.title-time {
+  font-style: italic;
+  color: #e8796e; /* the light red of .card-where */
+}
+
+.title-tagline {
+  margin-top: 3px;
+  font: 11px sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #9a9da3;
+}
+
+/* "Credits" under the tagline, against the right edge of the title panel: a button that reads as a small grey link. */
+.title-credits {
+  display: block;
+  margin: 4px 0 0 auto; /* auto on the left: pushed to the right edge */
+  padding: 0;
+  border: none;
+  background: none;
+  font: 11px sans-serif;
+  color: #9a9da3;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.title-credits:hover {
+  color: #ffffff;
+}
+
+/* The headings of the credits panel (in the card panel). */
+.credits-heading {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  color: #ffffff;
+}
+
+/* In the credits the portrait lines are the content: a bit larger than in the card. */
+#card-body > .card-credit {
+  font-size: 12px;
+}
+
+/* The first section of the credits sits right under the title, no rule. */
+.credits-heading + .card-attribution {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* The search: a dark field at the top centre, over the map (the title on the left, the card on the right), with the
+   list of the matching people under it. Same dark look as the title and the card. */
+#search {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  /* 520 px: the view flag, the arrow of the name, the year with its arrow and the gaps take about 304 px, so the
+     name field keeps about 216 px, enough for most names (a longer one ends with "..."). Still clear of the card on a 1280 px screen
+     (card 360 px + 16 px margin on the right: the search may be up to 528 px wide there). 56%: on a narrower window it shrinks with the map. */
+  width: min(520px, 56%);
+}
+
+/* The flag of the view: two buttons joined, the pressed one in the light red of the title. */
+.view-flag {
+  display: flex;
+  flex: none;
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.view-flag button {
+  padding: 0 10px;
+  border: 1px solid #44474d;
+  background: rgba(30, 32, 36, 0.96);
+  font: 13px sans-serif;
+  color: #9a9da3;
+  cursor: pointer;
+}
+
+.view-flag button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.view-flag button:last-child {
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+}
+
+.view-flag button[aria-pressed="true"] {
+  background: #e8796e;
+  border-color: #e8796e;
+  color: #1e2024;
+  cursor: default;
+}
+
+/* The name of a place of the year view: centred on its point (the anchor is a zero-size .stop-label), dark book face
+   with a white halo like the stop labels, a bit larger. No circle: the encounters are in the list. */
+.year-place {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font: bold 13px Georgia, "DejaVu Serif", serif;
+  color: #333333;
+  white-space: nowrap;
+  text-shadow: 0 0 2px #ffffff, 0 0 2px #ffffff, 0 0 3px #ffffff;
+}
+
+/* One encounter in the list of the year: a row button, a bar on the left in the colour of its level (--ring, set by
+   app.js), the two names, then the years and the level, small and grey. */
+.year-pair {
+  display: block;
+  width: 100%;
+  margin: 0 0 6px;
+  padding: 4px 8px;
+  border: none;
+  border-left: 4px solid var(--ring);
+  border-radius: 2px;
+  background: #2b2e33;
+  font: 14px sans-serif;
+  color: #ffffff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.year-pair:hover {
+  background: #44474d;
+}
+
+/* The statistics at the top of the year list: label in small grey capitals, value in white. */
+.year-stats {
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.year-stats-line {
+  margin-bottom: 3px;
+}
+
+.year-stats-label {
+  display: inline-block;
+  width: 104px; /* "BUSIEST PLACE" on one line, the values aligned */
+  color: #9a9da3;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* The busiest year: a link to it, like the links of the card. */
+.year-stats-link {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: #8ab4e8;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* The name of a place in the year list: a button that shows everybody there, in the look of .card-where. */
+.year-place-head {
+  display: block;
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 3px 4px;
+  border: none;
+  border-radius: 2px;
+  background: none;
+  font: 12px sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #e8796e;
+  text-align: left;
+  cursor: pointer;
+}
+
+.year-place-head:hover {
+  background: #44474d;
+}
+
+/* The pairs of the person opened, under its row: indented, a bit smaller. */
+.year-pair-sub {
+  width: calc(100% - 16px);
+  margin-left: 16px;
+  font-size: 13px;
+}
+
+/* The row shown on the map. */
+.year-pair-selected,
+.year-pair-selected:hover {
+  background: #5a5e66;
+}
+
+.year-pair-names,
+.year-pair-meta {
+  display: block;
+}
+
+.year-pair-meta {
+  color: #9a9da3;
+  font-size: 12px;
+}
+
+/* The year view is a still picture: no play buttons and no track (the date column keeps its place in the grid). */
+.year-view .buttons {
+  visibility: hidden;
+}
+
+.year-view #track {
+  display: none;
+}
+
+/* The name field takes the room left by the other fields. */
+.search-row {
+  display: flex;
+  gap: 6px;
+}
+
+#search-input,
+#search-year {
+  box-sizing: border-box;
+  padding: 9px 14px;
+  border: 1px solid #44474d;
+  border-radius: 6px;
+  background: rgba(30, 32, 36, 0.96);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  font: 18px Georgia, "DejaVu Serif", serif;
+  color: #ffffff;
+  color-scheme: dark; /* dark clear button of the search field */
+  outline: none;
+}
+
+#search-input {
+  flex: 1;
+  min-width: 0;
+  text-overflow: ellipsis; /* a name still too long ends with "..." instead of being cut mid-letter */
+}
+
+/* The year combo: the field and its arrow side by side; its list opens under it (absolute, inside the box). */
+.year-combo {
+  position: relative;
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+/* Wide enough for four digits. */
+#search-year {
+  width: 80px;
+  font-variant-numeric: tabular-nums;
+}
+
+#search-input:focus,
+#search-year:focus {
+  border-color: #e8796e; /* the light red of the title */
+}
+
+#search-input::placeholder,
+#search-year::placeholder {
+  color: #9a9da3;
+}
+
+/* The arrows of the combos, same dark look as the fields. */
+#search-toggle,
+#year-toggle {
+  flex: none;
+  width: 40px;
+  border: 1px solid #44474d;
+  border-radius: 6px;
+  background: rgba(30, 32, 36, 0.96);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  font-size: 16px;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+#search-toggle:disabled,
+#year-toggle:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* The lists scroll: every person (about 370) or year (about 300) fits in half the window. */
+#search-results,
+#year-results {
+  max-height: 50vh;
+  overflow-y: auto;
+  color-scheme: dark; /* dark scroll bar */
+  margin: 4px 0 0;
+  padding: 4px 0;
+  list-style: none;
+  border-radius: 6px;
+  background: rgba(30, 32, 36, 0.96);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+/* The year list: under the year combo, against its right edge, wide enough for "1803" and "12 encounters". */
+#year-results {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  width: 220px;
+}
+
+#search-results[hidden],
+#year-results[hidden] {
+  display: none;
+}
+
+/* One person: the name on the left, the years of the life on the right, grey. */
+.search-result {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 14px;
+  font: 15px sans-serif;
+  color: #e8e6e3;
+  cursor: pointer;
+}
+
+.search-result.active {
+  background: #44474d;
+}
+
+.search-years {
+  color: #9a9da3;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.search-empty {
+  padding: 6px 14px;
+  font: 14px sans-serif;
+  color: #9a9da3;
+}
+
+/* The notice of an empty scene: a dark panel in the middle of the map, like the card, with the choices as buttons
+   ("Continue" last, in the red of the track). */
+#notice {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(380px, 90%);
+  padding: 16px 18px 14px;
+  border-radius: 6px;
+  background: rgba(30, 32, 36, 0.96);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  font: 14px sans-serif;
+  color: #e8e6e3;
+  text-align: center;
+  z-index: 1; /* above the time bar, which comes later in the page: in a short window it covered the buttons */
+}
+
+#notice[hidden] {
+  display: none;
+}
+
+.notice-text {
+  margin: 0 0 6px;
+  font: 18px Georgia, "DejaVu Serif", serif;
+  color: #ffffff;
+}
+
+.notice-hint {
+  margin: 0 0 12px;
+  color: #9a9da3;
+  font-size: 13px;
+}
+
+#notice-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.notice-button {
+  padding: 6px 12px;
+  border: 1px solid #44474d;
+  border-radius: 4px;
+  background: #2b2e33;
+  font: 13px sans-serif;
+  color: #e8e6e3;
+  cursor: pointer;
+}
+
+.notice-continue {
+  border-color: #c0392b;
+  background: #c0392b; /* the colour of the track (TRACK_COLOR in app.js) */
+  color: #ffffff;
+}
+
+/* The server is waking up (scale to zero, apiFetch in app.js): a dark panel in the middle of the map like the notice,
+   shown only while an API request waits more than a few seconds. Above the notice (it goes by itself), and it lets
+   clicks through: it only informs. */
+#waking {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(340px, 90%);
+  padding: 16px 18px 4px;
+  border-radius: 6px;
+  background: rgba(30, 32, 36, 0.96);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  font: 14px sans-serif;
+  color: #e8e6e3;
+  text-align: center;
+  z-index: 2;
+  pointer-events: none;
+}
+
+#waking[hidden] {
+  display: none;
+}
+
+/* Birth and death of the person, right of the point like the stop label, one line ABOVE it ("* 1813", "† 1901"):
+   the book face of the labels, in the red of the track, so they belong to the person of the scene. */
+.life-mark {
+  width: 0;
+  height: 0;
+}
+
+.life-mark-text {
+  position: absolute;
+  left: 24px;
+  top: -22px; /* the line above the stop label (top -8px, 14 px a line) */
+  font: bold 11px Georgia, "DejaVu Serif", serif;
+  color: #c0392b; /* the colour of the track (TRACK_COLOR in app.js) */
+  white-space: nowrap;
+  text-shadow: 0 0 2px #ffffff, 0 0 2px #ffffff, 0 0 3px #ffffff;
+  cursor: default;
+}

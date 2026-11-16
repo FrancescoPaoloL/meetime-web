@@ -1,0 +1,6 @@
+# Editor and system leftovers: never part of the site.
+*~
+*.swp
+.DS_Store
+# Only for the private repository (keeps src/ui in git there).
+.gitkeep

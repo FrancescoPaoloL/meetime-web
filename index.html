@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!--
+    Content Security Policy: the page may load only what it needs, nothing else.
+    - script-src, worker-src 'self': our files and the vendored MapLibre (its worker is a module loaded by URL,
+      next to maplibre-gl.mjs, no blob:);
+    - style-src 'self': our CSS and the MapLibre CSS;
+    - img-src data:: the icons of the map controls are SVG written inside maplibre-gl.css (39 data: URLs);
+    - connect-src: our own files read by fetch (the portrait index), the base map style (OpenFreeMap) and the API on Azure
+      (the same URL as API_BASE_URL in app.js: the two change together).
+    Start strict: whatever the browser blocks shows up in the console, and is opened only if really needed.
+    Limit: a meta CSP covers this page, not the worker (a worker loaded by URL takes the policy of its own HTTP
+    response, and neither http.server nor Pages sends one), so the tile requests of the worker are not restricted here.
+  -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://tiles.openfreemap.org https://meetime-api.salmonwater-f8c25f7b.switzerlandnorth.azurecontainerapps.io; base-uri 'none'; form-action 'none'">
+  <title>MeeTime</title>
+  <link rel="stylesheet" href="vendor/maplibre-gl-6.16.0/maplibre-gl.css">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <div id="map"></div>
+  <!-- The title of the site: the name as a wordmark and what the site shows. Only the site: the person of the scene
+       belongs to the search (the chooser of person or year), not to the title. -->
+  <header id="title">
+    <h1 class="title-name">Mee<span class="title-time">Time</span></h1>
+    <div class="title-tagline">Plausible encounters, 1600-1900</div>
+    <!-- Opens the credits of the scene in the card panel (app.js, showCredits): portraits, texts and data, map. -->
+    <button id="credits-open" class="title-credits" type="button">Credits</button>
+  </header>
+  <!-- The search, a combo box: the list of every person (from GET /entries) opens with the field or the arrow, and
+       typing filters it in the browser (app.js). It shows the person of the scene; a choice opens another person. -->
+  <div id="search">
+    <div class="search-row">
+      <!-- The flag of the view (app.js, setupViewFlag): the life of one person, animated, or the picture of one year.
+           The pressed button is the view of the page; the other loads the page again with ?view=year or without. -->
+      <div class="view-flag" role="group" aria-label="View">
+        <button id="view-person" type="button" title="The life of one person">Person</button>
+        <button id="view-year" type="button" title="The encounters of one year">Year</button>
+      </div>
+      <input id="search-input" type="search" placeholder="Loading the people..." autocomplete="off" spellcheck="false"
+             aria-label="Search a person" disabled>
+      <!-- The arrow of the combo: opens the list of every person (the field stays typeable). -->
+      <button id="search-toggle" type="button" title="All the people" aria-label="All the people" disabled>&#x25BE;</button>
+      <!-- The year, a second filter after the person: a combo like the person one. The arrow opens the years with
+           encounters (from GET /years), typing filters them or takes any year. A year chosen keeps in the person list
+           only the people with an encounter that year, and moves the clock of the scene. Years only, no month: the
+           dates of the data are years (spec.md, "Year view"). -->
+      <div class="year-combo">
+        <input id="search-year" type="text" inputmode="numeric" maxlength="4" placeholder="Year" aria-label="Year"
+               autocomplete="off" spellcheck="false" disabled>
+        <button id="year-toggle" type="button" title="Years with encounters" aria-label="Years with encounters"
+                disabled>&#x25BE;</button>
+        <ul id="year-results" hidden></ul>
+      </div>
+    </div>
+    <ul id="search-results" hidden></ul>
+  </div>
+  <!-- The card of an encounter, opened by a click on a face met (app.js, showCard). -->
+  <aside id="card" hidden>
+    <button id="card-close" type="button" title="Close">&#x2715;</button>
+    <div id="card-body"></div>
+  </aside>
+  <!-- The notice of a scene with no encounter at the levels chosen (app.js, showEmptyNotice): the text, then the
+       other level choices and "Continue". -->
+  <div id="notice" hidden>
+    <div id="notice-body"></div>
+    <div id="notice-buttons"></div>
+  </div>
+  <!-- The time bar: buttons, the date, and a track to drag with the mouse, with one tick per meeting. Striped while
+       the scene loads; the buttons are enabled by app.js when the scene is there. -->
+  <div id="timebar" class="loading">
+    <div class="timebar-top">
+      <div class="buttons">
+        <button id="previous-meeting" type="button" title="Previous meeting" disabled>&#x23EE;</button>
+        <button id="play" type="button" title="Play / pause" disabled>&#x25B6;</button>
+        <button id="next-meeting" type="button" title="Next meeting" disabled>&#x23ED;</button>
+        <!-- Off by default: the clock jumps from meeting to meeting. On: the whole life, trips included. -->
+        <label class="journeys" title="Play the whole life, trips included, not only the meetings">
+          <input id="journeys" type="checkbox" disabled> Journeys
+        </label>
+      </div>
+      <div id="clock-label">
+        <div id="clock-date">Loading the scene...</div>
+        <div id="clock-place"></div>
+      </div>
+      <!-- The levels of the encounters shown (app.js, setupLevels): documented, or documented + plausible. -->
+      <div class="levels">
+        <select id="level" aria-label="Encounters shown"
+                title="Documented: both stays certain and overlapping. Plausible: both surely there in the same years, dates approximate."
+                disabled></select>
+      </div>
+    </div>
+    <div id="track">
+      <div class="bar"><div id="clock-fill"></div></div>
+      <div id="ticks"></div>
+      <div id="thumb"></div>
+    </div>
+    <!-- The legend of the levels (app.js, setupLegend): the colour and the ring line of each level. -->
+    <div id="legend"></div>
+  </div>
+</body>
+</html>
